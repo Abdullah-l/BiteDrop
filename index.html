@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>BiteDrop</title>
+<meta name="description" content="Send files directly between two browsers. Peer-to-peer, end-to-end encrypted, no uploads.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='44' fill='%232f6f4f'/><circle cx='86' cy='22' r='20' fill='white'/></svg>">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<main>
+  <header>
+    <h1>BiteDrop</h1>
+    <div class="status" id="status" hidden><span class="dot" id="dot"></span><span id="statusText"></span></div>
+  </header>
+
+  <!-- Start -->
+  <section id="home" class="screen">
+    <p class="lede">Send files straight from one browser to another. Nothing is uploaded anywhere.</p>
+    <div class="cards">
+      <div class="card">
+        <h2>Start</h2>
+        <p>Get a code to share with the other device.</p>
+        <button class="primary" id="createBtn">Create code</button>
+      </div>
+      <form class="card" id="joinForm">
+        <h2>Join</h2>
+        <p>Enter the code from the other device.</p>
+        <div class="row">
+          <input id="joinInput" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="XXXX-XXXX" aria-label="Code">
+          <button class="primary" type="submit">Join</button>
+        </div>
+      </form>
+    </div>
+    <p class="aside"><button class="link" id="manualBtn">Connect without any server</button>: swap two codes by copy-paste instead.</p>
+  </section>
+
+  <!-- Waiting with a short code -->
+  <section id="wait" class="screen" hidden>
+    <p class="label">Your code</p>
+    <div class="code" id="codeText"></div>
+    <div class="row center">
+      <button id="copyCode">Copy code</button>
+      <button id="copyLink">Copy link</button>
+      <button id="shareLink" hidden>Share…</button>
+    </div>
+    <p class="hint" id="waitHint">On the other device, open this page and enter the code.</p>
+    <p class="aside"><button class="link" data-action="home">Cancel</button></p>
+  </section>
+
+  <!-- Joining / connecting -->
+  <section id="connecting" class="screen" hidden>
+    <div class="spinner"></div>
+    <p class="hint" id="connectingText">Looking for the other device…</p>
+    <p class="aside"><button class="link" data-action="home">Cancel</button></p>
+  </section>
+
+  <!-- Manual (serverless) handshake -->
+  <section id="manual" class="screen" hidden>
+    <div id="manualOffer" hidden>
+      <p class="label">Step 1 · Send this code to the other device</p>
+      <textarea id="offerOut" readonly rows="4"></textarea>
+      <div class="row"><button id="copyOffer">Copy</button></div>
+      <p class="label">Step 2 · Paste their reply here</p>
+      <textarea id="answerIn" rows="4" placeholder="Reply code…"></textarea>
+      <div class="row"><button class="primary" id="useAnswer">Connect</button></div>
+    </div>
+    <div id="manualJoin" hidden>
+      <p class="label">Paste the code from the other device</p>
+      <textarea id="offerIn" rows="4" placeholder="Code…"></textarea>
+      <div class="row"><button class="primary" id="useOffer">Create reply</button></div>
+    </div>
+    <div id="manualAnswer" hidden>
+      <p class="label">Send this reply back to the other device</p>
+      <textarea id="answerOut" readonly rows="4"></textarea>
+      <div class="row"><button id="copyAnswer">Copy</button></div>
+      <p class="hint">You'll connect as soon as they paste it.</p>
+    </div>
+    <p class="hint error" id="manualError" hidden></p>
+    <p class="aside" id="manualSwitch"><button class="link" id="manualJoinBtn">I received a code instead</button></p>
+    <p class="aside"><button class="link" data-action="home">Cancel</button></p>
+  </section>
+
+  <!-- Connected -->
+  <section id="room" class="screen" hidden>
+    <label class="drop" id="drop">
+      <input type="file" id="picker" multiple>
+      <strong>Drop files to send</strong>
+      <span>or tap to choose · paste works too</span>
+    </label>
+    <div class="notice" id="roomEnded" hidden>
+      <span id="roomEndedText">Disconnected.</span>
+      <button class="primary" data-action="home">Start over</button>
+    </div>
+    <label class="toggle"><input type="checkbox" id="autoDl" checked> Save received files automatically</label>
+    <h3>Transfers</h3>
+    <div class="list" id="transfers"><div class="empty" id="empty">Files you send or receive appear here.</div></div>
+  </section>
+
+  <!-- Ended -->
+  <section id="ended" class="screen" hidden>
+    <p class="hint" id="endedText">Disconnected.</p>
+    <div class="row center"><button class="primary" data-action="home">Start over</button></div>
+  </section>
+
+  <footer>Peer-to-peer over WebRTC · end-to-end encrypted</footer>
+</main>
+<script type="module" src="js/app.js"></script>
+</body>
+</html>
