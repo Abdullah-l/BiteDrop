@@ -124,12 +124,12 @@ class MqttLink {
 async function deriveRoom(code) {
   const base = await crypto.subtle.importKey('raw', enc.encode(code), 'PBKDF2', false, ['deriveBits']);
   const bits = new Uint8Array(await crypto.subtle.deriveBits(
-    { name: 'PBKDF2', salt: enc.encode('bitedrop/v1'), iterations: 200000, hash: 'SHA-256' },
+    { name: 'PBKDF2', salt: enc.encode('bitedrop/v2'), iterations: 200000, hash: 'SHA-256' },
     base,
     384,
   ));
   const key = await crypto.subtle.importKey('raw', bits.slice(0, 32), 'AES-GCM', false, ['encrypt', 'decrypt']);
-  return { key, topic: 'bitedrop/v1/' + hex(bits.slice(32)) };
+  return { key, topic: 'bitedrop/v2/' + hex(bits.slice(32)) };
 }
 
 export class Signal {

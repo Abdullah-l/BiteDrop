@@ -1,6 +1,6 @@
 # BiteDrop
 
-Send files directly from one browser to another. Open the page on both devices, share a short code, drop files. They travel peer-to-peer and are never uploaded anywhere.
+Send files directly from one browser to another. Open [bd.almanie.dev](https://bd.almanie.dev) on both devices, share a 4-digit code, drop files. They travel peer-to-peer and are never uploaded anywhere.
 
 - **No accounts, no install, no backend.** BiteDrop is a single static page. It works in any current Chrome, Safari, Firefox or Edge, on phones and computers.
 - **Peer-to-peer and end-to-end encrypted.** Files go over a direct WebRTC connection, encrypted with DTLS.
@@ -9,12 +9,8 @@ Send files directly from one browser to another. Open the page on both devices, 
 ## How to use
 
 1. On device A, open BiteDrop and tap **Create code**.
-2. On device B, open BiteDrop and enter the code, or open the link from **Copy link** / **Share…**.
+2. On device B, open the link it shows (like `bd.almanie.dev/4829`), or open BiteDrop and type the code. It connects as soon as the fourth digit is in.
 3. Drop files on either side.
-
-### Connect without any server
-
-Under **Connect without any server**, the two devices swap a pair of longer codes by copy-paste: one code, then a reply. This works even if the code relays are unreachable, and on the same network nothing outside it is involved.
 
 ## What touches a server, exactly
 
@@ -25,7 +21,6 @@ Under **Connect without any server**, the two devices swap a pair of longer code
 | Finding a route | Public STUN servers (Google, Cloudflare) | Your public IP address, nothing else |
 | **The files** | **Only the two devices** | — |
 
-Copy-paste mode skips the brokers entirely.
 
 ## Limitations
 
@@ -33,6 +28,7 @@ Copy-paste mode skips the brokers entirely.
 - **Some networks block direct connections**, mainly mobile carriers (carrier-grade NAT) and some offices. BiteDrop doesn't use relay (TURN) servers, so those connections fail. Devices on the same Wi-Fi almost always connect.
 - **Received files are held in memory** until saved. Multi-GB files may fail on phones, especially iPhone.
 - **A code is single-use.** It connects the first device that joins, then stops listening.
+- **Codes are short on purpose.** Four digits are easy to share but only 10,000 combinations, so the code protects the handshake from casual snooping, not from someone actively trying to guess it while you wait. Don't use BiteDrop for files that must stay secret against a determined attacker.
 
 ## Running it yourself
 
@@ -42,8 +38,10 @@ It's plain HTML, CSS and JavaScript with no build step. Serve the folder from an
 python3 -m http.server 8000   # then open http://localhost:8000
 ```
 
+Links like `/4829` need the host to serve `index.html` for paths it doesn't know. Cloudflare Pages does this by default (as long as there's no `404.html`); elsewhere, typing the code on the start screen always works.
+
 | File | What it does |
 |---|---|
 | `index.html`, `style.css` | The page |
-| `js/app.js` | Connection flows (short code and copy-paste) and the file transfer protocol |
+| `js/app.js` | The short-code connection flow and the file transfer protocol |
 | `js/signal.js` | Minimal MQTT-over-WebSocket client and the code-derived encryption for the handshake |

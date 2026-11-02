@@ -3,12 +3,14 @@ import { Signal } from './signal.js';
 // Public STUN servers only tell each browser its public IP so the two can find a
 // path through home routers. They never see the files.
 const ICE_SERVERS = [{ urls: ['stun:stun.l.google.com:19302', 'stun:stun.cloudflare.com:3478'] }];
-const ALPHABET = '23456789ABCDEFGHJKMNPQRSTUVWXYZ'; // no 0/O, 1/I/L
-const CODE_LEN = 8;
-const MANUAL_PREFIX = 'BD1.';
+const ALPHABET = '0123456789';
+const CODE_LEN = 4; // short enough to read out loud or type on a phone keypad
 const READ_ERROR = "Couldn't read this file. Close it in other apps (e.g. Word) or save it to disk, then try again";
 
 const $ = (id) => document.getElementById(id);
+// The page's own folder, so links work at a domain root (bd.almanie.dev/1234) or in a subfolder.
+const BASE = location.pathname.replace(/[^/]*$/, '');
+const joinUrl = (code) => `${location.host}${BASE}${code}`;
 const me = randomId();
 let session = null;
 
@@ -29,9 +31,8 @@ function newCode() {
   return code;
 }
 
-const normalizeCode = (s) => s.toUpperCase().replace(/[^A-Z0-9]/g, '');
+const normalizeCode = (s) => s.replace(/\D/g, '');
 const isCode = (s) => s.length === CODE_LEN && [...s].every((c) => ALPHABET.includes(c));
-const formatCode = (c) => `${c.slice(0, 4)}-${c.slice(4)}`;
 
 const fmtSize = (n) => {
   if (n < 1024) return n + ' B';
@@ -76,33 +77,9 @@ function copyText(text, btn) {
   ta.remove();
 }
 
-const toB64url = (bytes) => btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-const fromB64url = (s) => Uint8Array.from(atob(s.replace(/-/g, '+').replace(/_/g, '/')), (c) => c.charCodeAt(0));
-
-async function packManual(t, sdp) {
-  const stream = new Blob([JSON.stringify({ t, sdp })]).stream().pipeThrough(new CompressionStream('deflate-raw'));
-  return MANUAL_PREFIX + toB64url(new Uint8Array(await new Response(stream).arrayBuffer()));
-}
-
-async function unpackManual(text, expected) {
-  const raw = text.replace(/\s+/g, '');
-  if (!raw.startsWith(MANUAL_PREFIX)) throw new Error("That doesn't look like a BiteDrop code.");
-  let msg;
-  try {
-    const stream = new Blob([fromB64url(raw.slice(MANUAL_PREFIX.length))]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
-    msg = JSON.parse(await new Response(stream).text());
-  } catch {
-    throw new Error('That code is incomplete or damaged. Copy the whole thing and try again.');
-  }
-  if (msg.t !== expected) {
-    throw new Error(expected === 'a' ? "That's a starting code, not a reply. Paste the reply from the other device." : "That's a reply code. Paste the code the other device created first.");
-  }
-  return msg.sdp;
-}
-
 // ---------- screens & status ----------
 
-const SCREENS = ['home', 'wait', 'connecting', 'manual', 'room', 'ended'];
+const SCREENS = ['home', 'wait', 'connecting', 'room', 'ended'];
 function show(name) {
   for (const s of SCREENS) $(s).hidden = s !== name;
 }
@@ -131,7 +108,7 @@ function teardown() {
 
 function goHome() {
   teardown();
-  history.replaceState(null, '', location.pathname + location.search);
+  history.replaceState(null, '', BASE);
   $('transfers').replaceChildren($('empty'));
   $('empty').hidden = false;
   $('joinInput').value = '';
@@ -252,7 +229,7 @@ function relayStatus(s, onReady) {
 function relayWatchdog(s, hintEl) {
   const t = setTimeout(() => {
     if (s === session && !s.relaysUp) {
-      hintEl.textContent = "Can't reach the code relays from this network. Use “Connect without any server” on the start screen instead.";
+      hintEl.textContent = "Can't reach the code relays from this network. Try another network, like mobile data or a different Wi-Fi.";
     }
   }, 8000);
   s.cleanup.push(() => clearTimeout(t));
@@ -261,13 +238,11 @@ function relayWatchdog(s, hintEl) {
 function startCreate() {
   const s = newSession();
   const code = newCode();
-  const link = `${location.origin}${location.pathname}#${code}`;
-  $('codeText').textContent = formatCode(code);
-  $('waitHint').textContent = 'On the other device, open this page and enter the code.';
-  $('copyCode').onclick = () => copyText(formatCode(code), $('copyCode'));
+  const link = `${location.protocol}//${joinUrl(code)}`;
+  $('codeText').textContent = code;
+  $('waitHint').replaceChildren('On the other device, open ', el('strong', { textContent: joinUrl(code) }));
+  $('copyCode').onclick = () => copyText(code, $('copyCode'));
   $('copyLink').onclick = () => copyText(link, $('copyLink'));
-  $('shareLink').hidden = !navigator.share;
-  $('shareLink').onclick = () => navigator.share({ title: 'BiteDrop', text: `BiteDrop code: ${formatCode(code)}`, url: link }).catch(() => {});
   show('wait');
   setStatus('Reaching relays…');
   relayWatchdog(s, $('waitHint'));
@@ -297,7 +272,7 @@ function startCreate() {
 
 function startJoin(code) {
   const s = newSession();
-  history.replaceState(null, '', location.pathname + location.search);
+  history.replaceState(null, '', BASE);
   $('connectingText').textContent = 'Looking for the other device…';
   show('connecting');
   setStatus('Reaching relays…');
@@ -329,78 +304,6 @@ function startJoin(code) {
     }
   }, 12000);
   s.cleanup.push(stopHello, () => clearTimeout(slow));
-}
-
-// ---------- copy-paste (serverless) flow ----------
-
-function manualView(part) {
-  for (const id of ['manualOffer', 'manualJoin', 'manualAnswer']) $(id).hidden = id !== part;
-  $('manualSwitch').hidden = part !== 'manualOffer';
-  $('manualError').hidden = true;
-  show('manual');
-}
-
-function manualError(err) {
-  $('manualError').textContent = err.message || String(err);
-  $('manualError').hidden = false;
-}
-
-async function startManualOffer() {
-  const s = newSession();
-  manualView('manualOffer');
-  setStatus('');
-  $('offerOut').value = 'Preparing…';
-  $('answerIn').value = '';
-  $('useAnswer').disabled = false;
-  $('useAnswer').textContent = 'Connect';
-  const pc = newPeer(s, { timeout: false });
-  attachChannel(s, pc.createDataChannel('bitedrop', { ordered: true }));
-  const code = await packManual('o', await localSdp(pc));
-  if (s === session) $('offerOut').value = code;
-}
-
-async function useAnswer() {
-  const s = session;
-  if (!s?.pc) return;
-  try {
-    const sdp = await unpackManual($('answerIn').value, 'a');
-    $('manualError').hidden = true;
-    $('useAnswer').disabled = true;
-    $('useAnswer').textContent = 'Connecting…';
-    await s.pc.setRemoteDescription({ type: 'answer', sdp });
-  } catch (err) {
-    $('useAnswer').disabled = false;
-    $('useAnswer').textContent = 'Connect';
-    manualError(err);
-  }
-}
-
-function startManualJoin(prefill = '') {
-  newSession();
-  manualView('manualJoin');
-  setStatus('');
-  $('offerIn').value = prefill;
-  $('useOffer').disabled = false;
-  if (prefill) useOffer();
-}
-
-async function useOffer() {
-  const s = session;
-  if (!s) return;
-  try {
-    const offer = await unpackManual($('offerIn').value, 'o');
-    $('useOffer').disabled = true;
-    const pc = newPeer(s, { timeout: false });
-    pc.ondatachannel = (e) => attachChannel(s, e.channel);
-    await pc.setRemoteDescription({ type: 'offer', sdp: offer });
-    const code = await packManual('a', await localSdp(pc));
-    if (s !== session) return;
-    $('answerOut').value = code;
-    manualView('manualAnswer');
-  } catch (err) {
-    $('useOffer').disabled = false;
-    manualError(err);
-  }
 }
 
 // ---------- file transfer ----------
@@ -668,27 +571,23 @@ function sendFiles(list) {
 }
 
 $('createBtn').onclick = startCreate;
-$('manualBtn').onclick = startManualOffer;
-$('manualJoinBtn').onclick = () => startManualJoin();
-$('useAnswer').onclick = useAnswer;
-$('useOffer').onclick = useOffer;
-$('copyOffer').onclick = () => copyText($('offerOut').value, $('copyOffer'));
-$('copyAnswer').onclick = () => copyText($('answerOut').value, $('copyAnswer'));
 document.querySelectorAll('[data-action="home"]').forEach((b) => (b.onclick = goHome));
 
 $('joinForm').onsubmit = (e) => {
   e.preventDefault();
-  const raw = $('joinInput').value.trim();
-  if (raw.startsWith(MANUAL_PREFIX)) return startManualJoin(raw);
-  const code = normalizeCode(raw);
+  const code = normalizeCode($('joinInput').value);
   if (!isCode(code)) {
-    $('joinInput').setCustomValidity('Codes are 8 letters and numbers, like K7QM-X3PD');
+    $('joinInput').setCustomValidity('Codes are 4 digits, like 4829');
     $('joinInput').reportValidity();
     return;
   }
   startJoin(code);
 };
-$('joinInput').oninput = () => $('joinInput').setCustomValidity('');
+$('joinInput').oninput = () => {
+  $('joinInput').setCustomValidity('');
+  // Join as soon as all four digits are in; no need to press the button.
+  if (isCode(normalizeCode($('joinInput').value))) $('joinForm').requestSubmit();
+};
 
 try { $('autoDl').checked = localStorage.getItem('bd-auto') !== '0'; } catch {}
 $('autoDl').onchange = () => { try { localStorage.setItem('bd-auto', $('autoDl').checked ? '1' : '0'); } catch {} };
@@ -717,9 +616,10 @@ if (!window.RTCPeerConnection || !window.isSecureContext) {
     ? "This browser doesn't support direct connections. Try a current Chrome, Safari, Firefox, or Edge."
     : 'BiteDrop needs a secure (https://) page to work.';
   $('home').querySelector('.cards').hidden = true;
-  $('home').querySelector('.aside').hidden = true;
 } else {
-  const fromLink = normalizeCode(decodeURIComponent(location.hash.slice(1)));
+  // A link like bd.almanie.dev/1234 (or the older #1234 form) joins straight away.
+  const fromPath = location.pathname.slice(location.pathname.lastIndexOf('/') + 1);
+  const fromLink = normalizeCode(decodeURIComponent(fromPath || location.hash.slice(1)));
   if (isCode(fromLink)) startJoin(fromLink);
   else show('home');
 }
