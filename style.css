@@ -92,7 +92,8 @@ button.disc:hover { transform: scale(1.03); }
 button.disc:active { transform: scale(.96); }
 /* A mask clips the focus ring, so draw it inside. */
 button.disc:focus-visible { outline: none; box-shadow: inset 0 0 0 4px var(--on-accent), inset 0 0 0 7px var(--accent); }
-.disc span { transform: translate(-13%, 16%); }
+/* Nudge the label toward the whole part of the disc, away from the bite. */
+.disc span { transform: translate(-6%, 8%); }
 .disc.small { width: 96px; cursor: default; margin-top: clamp(28px, 8vh, 72px); }
 .breathing { animation: breathe 2.4s ease-in-out infinite; }
 @keyframes breathe { 50% { transform: scale(.9); opacity: .75; } }
