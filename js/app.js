@@ -6,6 +6,7 @@ const ICE_SERVERS = [{ urls: ['stun:stun.l.google.com:19302', 'stun:stun.cloudfl
 const ALPHABET = '0123456789';
 const CODE_LEN = 4; // short enough to read out loud or type on a phone keypad
 const READ_ERROR = "Couldn't read this file. Close it in other apps (e.g. Word) or save it to disk, then try again";
+const TEXT_MAX = 5 * 1024 * 1024; // bigger than this, send it as a file
 
 const $ = (id) => document.getElementById(id);
 // The page's own folder, so links work at a domain root (bd.almanie.dev/1234) or in a subfolder.
@@ -112,6 +113,8 @@ function goHome() {
   $('transfers').replaceChildren($('empty'));
   $('empty').hidden = false;
   $('joinInput').value = '';
+  $('textInput').value = '';
+  $('secure').hidden = true;
   setStatus('');
   show('home');
 }
@@ -123,6 +126,7 @@ function end(s, message) {
     s.link?.abortAll();
     s.signal?.close();
     $('drop').hidden = true;
+    $('textForm').hidden = true;
     $('roomEnded').hidden = false;
     $('roomEndedText').textContent = message;
     setStatus('Disconnected');
@@ -189,9 +193,11 @@ function attachChannel(s, ch) {
     s.signal = null;
     s.link = new Link(s, ch);
     $('drop').hidden = false;
+    $('textForm').hidden = false;
     $('roomEnded').hidden = true;
     show('room');
     showRoute(s);
+    checkEncryption(s);
   };
   ch.onopen = open;
   ch.onclose = () => end(s, 'The other device left.');
@@ -213,6 +219,62 @@ async function showRoute(s) {
   if (s !== session || s.ended) return;
   const who = s.link?.peerName ? `Connected to ${s.link.peerName}` : 'Connected';
   setStatus(`${who} · ${label}`, true);
+}
+
+// ---------- transport encryption ----------
+//
+// WebRTC data channels always run over DTLS, so everything sent (files and
+// text) is encrypted between the two browsers. Here we confirm the DTLS
+// session is actually up before allowing sends, and derive a security code
+// from both sides' DTLS certificate fingerprints. If someone tampered with the
+// handshake to sit in the middle, the two devices would show different codes.
+
+const DTLS_VERSIONS = { FEFD: 'DTLS 1.2', FEFC: 'DTLS 1.3' };
+const fingerprint = (sdp) => {
+  const m = /^a=fingerprint:(\S+) (\S+)/mi.exec(sdp || '');
+  return m ? `${m[1].toLowerCase()} ${m[2].toUpperCase()}` : '';
+};
+
+async function checkEncryption(s) {
+  const out = $('secure');
+  let state = null, version = '';
+  try {
+    for (let tries = 0; tries < 10; tries++) {
+      const stats = await s.pc.getStats();
+      stats.forEach((r) => {
+        if (r.type === 'transport' && r.dtlsState) {
+          state = r.dtlsState;
+          version = DTLS_VERSIONS[String(r.tlsVersion || '').toUpperCase()] || '';
+        }
+      });
+      if (state !== 'connecting' && state !== 'new') break;
+      await new Promise((r) => setTimeout(r, 300));
+    }
+  } catch {}
+  if (s !== session) return;
+
+  const a = fingerprint(s.pc.localDescription?.sdp);
+  const b = fingerprint(s.pc.remoteDescription?.sdp);
+  // Browsers that report dtlsState must say 'connected'; the rest (older Safari)
+  // can't open a data channel without DTLS anyway, so a fingerprint on both sides is enough.
+  s.secure = !!(a && b) && (state === null || state === 'connected');
+  out.hidden = false;
+  if (!s.secure) {
+    out.className = 'secure bad';
+    out.textContent = "Couldn't confirm this connection is encrypted, so sending is turned off.";
+    return;
+  }
+  const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode([a, b].sort().join('|'))));
+  const num = ((digest[0] << 24) | (digest[1] << 16) | (digest[2] << 8) | digest[3]) >>> 0;
+  const code = String(num % 1e6).padStart(6, '0');
+  if (s !== session) return;
+  out.className = 'secure';
+  out.replaceChildren(
+    `Encrypted end to end${version ? ` (${version})` : ''} · Security code `,
+    el('strong', { textContent: `${code.slice(0, 3)} ${code.slice(3)}` }),
+    el('br'),
+    'Both devices should show the same code. If they differ, disconnect.',
+  );
 }
 
 // ---------- short-code flow ----------
@@ -368,6 +430,14 @@ function transferRow(direction, name, size) {
       cancelBtn?.remove();
       if (url) actions.append(el('a', { className: 'btn primary', href: url, download: name, textContent: 'Save' }));
     },
+    // Shows a text message inline (always as textContent, never as HTML) with a Copy button.
+    showText(body) {
+      row.querySelector('.bar').remove();
+      row.append(el('div', { className: 'textbox', textContent: body }));
+      const copy = el('button', { className: 'primary', textContent: 'Copy' });
+      copy.onclick = () => copyText(body, copy);
+      actions.append(copy);
+    },
     fail(text) {
       if (api.finished) return;
       api.finished = true;
@@ -406,11 +476,13 @@ class Link {
 
   // ----- sending -----
 
-  enqueue(files) {
+  enqueue(files, kind = 'file') {
+    const added = [];
     for (const file of files) {
       const id = randomId();
       const row = transferRow('out', file.name || 'file', file.size);
-      const job = { id, file, row, body: snapshot(file), cancelled: false };
+      const body = kind === 'text' ? Promise.resolve(file) : snapshot(file);
+      const job = { id, file, kind, row, body, cancelled: false };
       job.body.catch(() => {});
       row.onCancel(() => {
         job.cancelled = true;
@@ -419,8 +491,10 @@ class Link {
       });
       this.jobs.set(id, job);
       this.queue.push(job);
+      added.push(job);
     }
     this.pump();
+    return added;
   }
 
   async pump() {
@@ -441,7 +515,7 @@ class Link {
     try { body = await job.body; } catch { return job.row.fail(READ_ERROR); }
     const { ch } = this;
     const size = body.size;
-    this.send({ t: 'file', id: job.id, name: job.file.name || 'file', size });
+    this.send({ t: 'file', id: job.id, kind: job.kind, name: job.file.name || 'file', size });
     job.row.progress(0);
     for (let off = 0; off < size;) {
       if (job.cancelled) return;
@@ -500,9 +574,10 @@ class Link {
         showRoute(this.s);
         break;
       case 'file': {
-        const name = safeName(m.name);
         const size = Math.max(0, Number(m.size) || 0);
-        const inc = { id: String(m.id), name, size, chunks: [], got: 0, acked: 0, row: transferRow('in', name, size) };
+        const isText = m.kind === 'text' && size <= TEXT_MAX;
+        const name = isText ? 'Text' : safeName(m.name);
+        const inc = { id: String(m.id), name, size, isText, chunks: [], got: 0, acked: 0, row: transferRow('in', name, size) };
         inc.row.onCancel(() => {
           this.send({ t: 'cancel', id: inc.id });
           inc.row.fail('Cancelled');
@@ -517,6 +592,14 @@ class Link {
         if (!inc || inc.id !== m.id) break;
         this.incoming = null;
         if (inc.got !== inc.size) { inc.row.fail('Transfer incomplete'); break; }
+        if (inc.isText) {
+          new Blob(inc.chunks).text().then((body) => {
+            inc.row.done(`${body.length.toLocaleString()} characters · received`);
+            inc.row.showText(body);
+          });
+          this.send({ t: 'done', id: inc.id });
+          break;
+        }
         // Always octet-stream: a peer-supplied type like text/html must never be
         // rendered inside this page's origin.
         const url = URL.createObjectURL(new Blob(inc.chunks, { type: 'application/octet-stream' }));
@@ -539,7 +622,7 @@ class Link {
         if (job && !job.row.finished) job.row.progress(Math.min(Number(m.got) || 0, job.file.size));
         break;
       case 'done':
-        if (job) job.row.done(`${fmtSize(job.file.size)} · delivered`);
+        if (job) job.row.done(job.kind === 'text' ? `${job.chars.toLocaleString()} characters · delivered` : `${fmtSize(job.file.size)} · delivered`);
         break;
     }
   }
@@ -563,11 +646,31 @@ class Link {
 
 // ---------- wiring ----------
 
+function canSend() {
+  // session.secure is set once DTLS is confirmed; never send before that.
+  return !!(session?.link && !session.ended && session.secure);
+}
+
 function sendFiles(list) {
   const files = [...(list || [])];
-  const link = session?.link;
-  if (!files.length || !link || session.ended) return;
-  link.enqueue(files);
+  if (!files.length || !canSend()) return;
+  session.link.enqueue(files);
+}
+
+function sendText() {
+  const input = $('textInput');
+  const body = input.value;
+  if (!body.trim() || !canSend()) return;
+  const file = new File([body], 'Text', { type: 'text/plain' });
+  if (file.size > TEXT_MAX) {
+    input.setCustomValidity('That text is too long to send as a message. Save it as a file and drop it instead.');
+    input.reportValidity();
+    return;
+  }
+  const [job] = session.link.enqueue([file], 'text');
+  job.chars = body.length;
+  job.row.showText(body);
+  input.value = '';
 }
 
 $('createBtn').onclick = startCreate;
@@ -603,9 +706,18 @@ const drop = $('drop');
   if (t === 'drop' || !e.relatedTarget) drop.classList.remove('over');
 }));
 document.addEventListener('drop', (e) => sendFiles(e.dataTransfer?.files));
+$('textForm').onsubmit = (e) => { e.preventDefault(); sendText(); };
+$('textInput').oninput = () => $('textInput').setCustomValidity('');
+$('textInput').onkeydown = (e) => {
+  if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); sendText(); }
+};
+
 document.addEventListener('paste', (e) => {
-  if (e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLInputElement) return;
-  sendFiles(e.clipboardData?.files);
+  const cd = e.clipboardData;
+  if (e.target instanceof HTMLInputElement) return;
+  // In the text box, plain text pastes as text; a pasted file (e.g. a screenshot) is sent as a file.
+  if (e.target instanceof HTMLTextAreaElement && cd?.types.includes('text/plain')) return;
+  if (cd?.files.length) { e.preventDefault(); sendFiles(cd.files); }
 });
 window.addEventListener('beforeunload', (e) => {
   if (session?.link?.busy) e.preventDefault();

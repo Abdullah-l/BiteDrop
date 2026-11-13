@@ -97,6 +97,17 @@ button.ghost { background: none; border-color: transparent; color: var(--muted);
 .drop strong { font-size: 18px; color: var(--heading); }
 .drop span { color: var(--muted); font-size: 15px; }
 .drop input { display: none; }
+.compose { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
+textarea {
+  font: inherit; color: var(--text); background: var(--surface); width: 100%; resize: vertical;
+  border: 1px solid var(--line); border-radius: var(--radius); padding: 10px 12px; min-height: 84px;
+}
+textarea:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+.row.end { justify-content: flex-end; align-items: center; }
+.kbd-hint { color: var(--muted); font-size: 13px; }
+.secure { color: var(--muted); font-size: 14px; margin: 12px 0 0; }
+.secure strong { color: var(--heading); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .08em; }
+.secure.bad { color: var(--danger); }
 .toggle { display: flex; align-items: center; gap: 8px; font-size: 15px; color: var(--muted); margin-top: 14px; cursor: pointer; user-select: none; }
 .toggle input { accent-color: var(--accent); width: 18px; height: 18px; min-height: 0; }
 
@@ -111,6 +122,11 @@ button.ghost { background: none; border-color: transparent; color: var(--muted);
 .actions { grid-row: 1 / span 2; grid-column: 2; display: flex; gap: 6px; }
 .bar { grid-column: 1 / -1; height: 6px; background: var(--line); border-radius: 3px; overflow: hidden; }
 .bar > div { height: 100%; width: 0; background: var(--accent); }
+.textbox {
+  grid-column: 1 / -1; margin: 4px 0 0; padding: 10px 12px; max-height: 240px; overflow: auto;
+  background: var(--soft); border-radius: 8px; white-space: pre-wrap; overflow-wrap: anywhere;
+  font: 15px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--text);
+}
 .item.error .meta { color: var(--danger); }
 .empty { color: var(--muted); text-align: center; padding: 28px 0; font-size: 15px; }
 
@@ -128,4 +144,5 @@ footer a:hover { text-decoration: underline; }
   .item { grid-template-columns: 1fr; }
   .actions { grid-row: auto; grid-column: 1; margin-top: 6px; }
   .actions .btn.primary { flex: 1; }
+  .kbd-hint { display: none; }
 }
