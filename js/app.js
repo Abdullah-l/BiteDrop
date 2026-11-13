@@ -1,4 +1,4 @@
-import { Signal } from './signal.js';
+import { Signal } from './signal.js?v=202611131704';
 
 // Public STUN servers only tell each browser its public IP so the two can find a
 // path through home routers. They never see the files.
