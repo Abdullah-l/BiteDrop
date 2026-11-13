@@ -86,6 +86,7 @@ function show(name) {
 }
 
 function setStatus(text, live = false) {
+  $('status').title = '';
   $('status').hidden = !text;
   $('statusText').textContent = text || '';
   $('dot').className = 'dot' + (live ? ' live' : '');
@@ -114,6 +115,7 @@ function goHome() {
   $('empty').hidden = false;
   $('joinInput').value = '';
   $('textInput').value = '';
+  renderSlots();
   $('secure').hidden = true;
   setStatus('');
   show('home');
@@ -205,7 +207,7 @@ function attachChannel(s, ch) {
 }
 
 async function showRoute(s) {
-  let label = 'direct';
+  let label = 'Direct connection';
   try {
     const stats = await s.pc.getStats();
     let pair;
@@ -213,12 +215,12 @@ async function showRoute(s) {
     if (!pair) stats.forEach((r) => { if (r.type === 'candidate-pair' && r.nominated && r.state === 'succeeded') pair = r; });
     if (pair) {
       const types = [stats.get(pair.localCandidateId)?.candidateType, stats.get(pair.remoteCandidateId)?.candidateType];
-      label = types.includes('relay') ? 'relayed' : types.every((t) => t === 'host') ? 'direct · same network' : 'direct · over the internet';
+      label = types.includes('relay') ? 'Relayed connection' : types.every((t) => t === 'host') ? 'Direct, same network' : 'Direct, over the internet';
     }
   } catch {}
   if (s !== session || s.ended) return;
-  const who = s.link?.peerName ? `Connected to ${s.link.peerName}` : 'Connected';
-  setStatus(`${who} · ${label}`, true);
+  setStatus(s.link?.peerName || 'Connected', true);
+  $('status').title = label;
 }
 
 // ---------- transport encryption ----------
@@ -234,6 +236,9 @@ const fingerprint = (sdp) => {
   const m = /^a=fingerprint:(\S+) (\S+)/mi.exec(sdp || '');
   return m ? `${m[1].toLowerCase()} ${m[2].toUpperCase()}` : '';
 };
+
+const LOCK_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2.5"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>';
+const lockIcon = () => { const t = document.createElement('template'); t.innerHTML = LOCK_SVG; return t.content.firstChild; };
 
 async function checkEncryption(s) {
   const out = $('secure');
@@ -261,7 +266,7 @@ async function checkEncryption(s) {
   out.hidden = false;
   if (!s.secure) {
     out.className = 'secure bad';
-    out.textContent = "Couldn't confirm this connection is encrypted, so sending is turned off.";
+    out.replaceChildren(lockIcon(), "Couldn't confirm encryption. Sending is off.");
     return;
   }
   const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode([a, b].sort().join('|'))));
@@ -269,12 +274,8 @@ async function checkEncryption(s) {
   const code = String(num % 1e6).padStart(6, '0');
   if (s !== session) return;
   out.className = 'secure';
-  out.replaceChildren(
-    `Encrypted end to end${version ? ` (${version})` : ''} · Security code `,
-    el('strong', { textContent: `${code.slice(0, 3)} ${code.slice(3)}` }),
-    el('br'),
-    'Both devices should show the same code. If they differ, disconnect.',
-  );
+  out.title = `Encrypted end to end${version ? ` with ${version}` : ''}. Both devices should show the same code; if they differ, someone is in the middle, so disconnect.`;
+  out.replaceChildren(lockIcon(), el('span', {}, 'Encrypted. Code ', el('strong', { textContent: `${code.slice(0, 3)} ${code.slice(3)}` }), ' should match.'));
 }
 
 // ---------- short-code flow ----------
@@ -284,7 +285,8 @@ function relayStatus(s, onReady) {
     if (s !== session || s.connected) return;
     s.relaysUp = ready > 0;
     if (ready) onReady?.();
-    setStatus(ready ? `Ready · ${ready} of ${total} relays` : 'Reaching relays…', ready > 0);
+    setStatus(ready ? 'Ready' : 'Connecting…', ready > 0);
+    $('status').title = `${ready} of ${total} code relays reachable`;
   };
 }
 
@@ -302,11 +304,11 @@ function startCreate() {
   const code = newCode();
   const link = `${location.protocol}//${joinUrl(code)}`;
   $('codeText').textContent = code;
-  $('waitHint').replaceChildren('On the other device, open ', el('strong', { textContent: joinUrl(code) }));
+  $('waitHint').replaceChildren('Open ', el('strong', { textContent: joinUrl(code) }), ' on the other device, or type the code.');
   $('copyCode').onclick = () => copyText(code, $('copyCode'));
   $('copyLink').onclick = () => copyText(link, $('copyLink'));
   show('wait');
-  setStatus('Reaching relays…');
+  setStatus('Connecting…');
   relayWatchdog(s, $('waitHint'));
 
   let offer = null;
@@ -315,7 +317,7 @@ function startCreate() {
     if (msg.type === 'hello') {
       if (!s.peer) {
         s.peer = msg.from; // first device to show up wins; the code is single-use
-        $('waitHint').textContent = 'Found the other device. Connecting…';
+        $('waitHint').textContent = 'Found it. Connecting…';
         const pc = newPeer(s);
         attachChannel(s, pc.createDataChannel('bitedrop', { ordered: true }));
         const sdp = await localSdp(pc);
@@ -337,7 +339,7 @@ function startJoin(code) {
   history.replaceState(null, '', BASE);
   $('connectingText').textContent = 'Looking for the other device…';
   show('connecting');
-  setStatus('Reaching relays…');
+  setStatus('Connecting…');
   relayWatchdog(s, $('connectingText'));
 
   s.signal = new Signal(code, async (msg) => {
@@ -403,12 +405,13 @@ function transferRow(direction, name, size) {
   const bar = el('div');
   const meta = el('div', { className: 'meta', textContent: direction === 'out' ? 'Waiting…' : 'Receiving…' });
   const actions = el('div', { className: 'actions' });
-  const row = el('div', { className: 'item' },
-    el('div', { className: 'name' }, el('span', { className: 'dir', textContent: direction === 'out' ? '↑' : '↓' }), name),
-    actions, meta, el('div', { className: 'bar' }, bar));
+  const nameEl = el('div', { className: 'name', textContent: name });
+  const bubble = el('div', { className: 'bubble' }, nameEl, actions, meta, el('div', { className: 'bar' }, bar));
+  const row = el('div', { className: `item ${direction}` }, bubble);
   $('transfers').prepend(row);
   let start = 0;
   let cancelBtn = null;
+  let sizeText = fmtSize(size);
   const api = {
     finished: false,
     progress(bytes) {
@@ -416,7 +419,7 @@ function transferRow(direction, name, size) {
       const pct = size ? (bytes / size) * 100 : 100;
       const secs = (performance.now() - start) / 1000;
       bar.style.width = pct + '%';
-      meta.textContent = `${fmtSize(bytes)} of ${fmtSize(size)} · ${Math.floor(pct)}%` + (secs > 0.5 ? ` · ${fmtSize(bytes / secs)}/s` : '');
+      meta.textContent = `${Math.floor(pct)}% of ${fmtSize(size)}` + (secs > 0.5 ? `, ${fmtSize(bytes / secs)}/s` : '');
     },
     onCancel(fn) {
       cancelBtn = el('button', { className: 'ghost', textContent: 'Cancel' });
@@ -425,22 +428,25 @@ function transferRow(direction, name, size) {
     },
     done(text, url) {
       api.finished = true;
-      bar.style.width = '100%';
-      meta.textContent = text;
+      bubble.querySelector('.bar')?.remove();
+      meta.textContent = `${sizeText}, ${text}`;
       cancelBtn?.remove();
       if (url) actions.append(el('a', { className: 'btn primary', href: url, download: name, textContent: 'Save' }));
     },
     // Shows a text message inline (always as textContent, never as HTML) with a Copy button.
     showText(body) {
-      row.querySelector('.bar').remove();
-      row.append(el('div', { className: 'textbox', textContent: body }));
-      const copy = el('button', { className: 'primary', textContent: 'Copy' });
+      row.classList.add('text');
+      sizeText = `${body.length.toLocaleString()} characters`;
+      nameEl.replaceWith(el('div', { className: 'textbox', textContent: body }));
+      bubble.querySelector('.bar')?.remove();
+      const copy = el('button', { textContent: 'Copy' });
       copy.onclick = () => copyText(body, copy);
       actions.append(copy);
     },
     fail(text) {
       if (api.finished) return;
       api.finished = true;
+      bubble.querySelector('.bar')?.remove();
       meta.textContent = text;
       cancelBtn?.remove();
       row.classList.add('error');
@@ -594,8 +600,8 @@ class Link {
         if (inc.got !== inc.size) { inc.row.fail('Transfer incomplete'); break; }
         if (inc.isText) {
           new Blob(inc.chunks).text().then((body) => {
-            inc.row.done(`${body.length.toLocaleString()} characters · received`);
             inc.row.showText(body);
+            inc.row.done('received');
           });
           this.send({ t: 'done', id: inc.id });
           break;
@@ -604,7 +610,7 @@ class Link {
         // rendered inside this page's origin.
         const url = URL.createObjectURL(new Blob(inc.chunks, { type: 'application/octet-stream' }));
         this.urls.push(url);
-        inc.row.done(`${fmtSize(inc.size)} · received`, url);
+        inc.row.done('received', url);
         this.send({ t: 'done', id: inc.id });
         if ($('autoDl').checked) saveBlob(url, inc.name);
         break;
@@ -622,7 +628,7 @@ class Link {
         if (job && !job.row.finished) job.row.progress(Math.min(Number(m.got) || 0, job.file.size));
         break;
       case 'done':
-        if (job) job.row.done(job.kind === 'text' ? `${job.chars.toLocaleString()} characters · delivered` : `${fmtSize(job.file.size)} · delivered`);
+        if (job) job.row.done('delivered');
         break;
     }
   }
@@ -668,7 +674,6 @@ function sendText() {
     return;
   }
   const [job] = session.link.enqueue([file], 'text');
-  job.chars = body.length;
   job.row.showText(body);
   input.value = '';
 }
@@ -686,8 +691,20 @@ $('joinForm').onsubmit = (e) => {
   }
   startJoin(code);
 };
+function renderSlots() {
+  const input = $('joinInput');
+  const digits = normalizeCode(input.value).slice(0, CODE_LEN);
+  if (input.value !== digits) input.value = digits;
+  const focused = document.activeElement === input;
+  $('slots').querySelectorAll('.slot').forEach((slot, i) => {
+    slot.textContent = digits[i] || '';
+    slot.classList.toggle('active', focused && (i === digits.length || (digits.length === CODE_LEN && i === CODE_LEN - 1)));
+  });
+}
+$('joinInput').onfocus = $('joinInput').onblur = renderSlots;
 $('joinInput').oninput = () => {
   $('joinInput').setCustomValidity('');
+  renderSlots();
   // Join as soon as all four digits are in; no need to press the button.
   if (isCode(normalizeCode($('joinInput').value))) $('joinForm').requestSubmit();
 };
@@ -696,14 +713,14 @@ try { $('autoDl').checked = localStorage.getItem('bd-auto') !== '0'; } catch {}
 $('autoDl').onchange = () => { try { localStorage.setItem('bd-auto', $('autoDl').checked ? '1' : '0'); } catch {} };
 
 $('picker').onchange = (e) => { sendFiles(e.target.files); e.target.value = ''; };
-const drop = $('drop');
+const overlay = $('dropOverlay');
 ['dragenter', 'dragover'].forEach((t) => document.addEventListener(t, (e) => {
   e.preventDefault();
-  if (session?.link) drop.classList.add('over');
+  if (canSend() && e.dataTransfer?.types.includes('Files')) overlay.hidden = false;
 }));
 ['dragleave', 'drop'].forEach((t) => document.addEventListener(t, (e) => {
   e.preventDefault();
-  if (t === 'drop' || !e.relatedTarget) drop.classList.remove('over');
+  if (t === 'drop' || !e.relatedTarget) overlay.hidden = true;
 }));
 document.addEventListener('drop', (e) => sendFiles(e.dataTransfer?.files));
 $('textForm').onsubmit = (e) => { e.preventDefault(); sendText(); };

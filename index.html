@@ -5,90 +5,84 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>BiteDrop</title>
 <meta name="description" content="Send files and text directly between two browsers. Peer-to-peer, end-to-end encrypted, no uploads.">
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='44' fill='%230056b2'/><circle cx='86' cy='22' r='20' fill='white'/></svg>">
+<meta name="theme-color" content="#f4f5fa" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0f1020" media="(prefers-color-scheme: dark)">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><mask id='m'><rect width='100' height='100' fill='white'/><circle cx='86' cy='22' r='20' fill='black'/></mask><circle cx='50' cy='50' r='44' fill='%233a47f5' mask='url(%23m)'/></svg>">
+<link rel="preload" href="fonts/unbounded.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
 <main>
   <header>
-    <h1>BiteDrop</h1>
+    <h1 class="brand"><span class="mark" aria-hidden="true"></span>BiteDrop</h1>
     <div class="status" id="status" hidden><span class="dot" id="dot"></span><span id="statusText"></span></div>
   </header>
 
   <!-- Start -->
   <section id="home" class="screen">
-    <p class="lede">Send files and text straight from one browser to another. Nothing is uploaded anywhere.</p>
-    <div class="cards">
-      <div class="card">
-        <h2>Send</h2>
-        <p>Get a 4-digit code to share with the other device.</p>
-        <button class="primary" id="createBtn">Create code</button>
+    <p class="lede">Files and text, straight between two devices.</p>
+    <button class="disc" id="createBtn" aria-label="Send: get a code for the other device"><span>Send</span></button>
+    <form id="joinForm" class="join">
+      <label for="joinInput">Receiving? Type the code.</label>
+      <div class="slots" id="slots">
+        <input id="joinInput" inputmode="numeric" pattern="[0-9]*" autocomplete="one-time-code" maxlength="4" spellcheck="false" aria-label="4-digit code">
+        <span class="slot"></span><span class="slot"></span><span class="slot"></span><span class="slot"></span>
       </div>
-      <form class="card" id="joinForm">
-        <h2>Receive</h2>
-        <p>Type the code from the other device.</p>
-        <div class="row">
-          <input id="joinInput" inputmode="numeric" autocomplete="one-time-code" maxlength="4" spellcheck="false" placeholder="1234" aria-label="Code">
-          <button class="primary" type="submit">Join</button>
-        </div>
-      </form>
-    </div>
+    </form>
   </section>
 
   <!-- Waiting with a short code -->
   <section id="wait" class="screen" hidden>
-    <p class="label">Your code</p>
-    <div class="code" id="codeText"></div>
-    <div class="row center">
-      <button id="copyCode">Copy code</button>
-      <button id="copyLink">Copy link</button>
-    </div>
+    <div class="disc small breathing" aria-hidden="true"></div>
+    <div class="code" id="codeText" aria-label="Your code"></div>
     <p class="hint" id="waitHint"></p>
-    <p class="aside center-text"><button class="link" data-action="home">Cancel</button></p>
+    <div class="row center">
+      <button class="primary" id="copyLink">Copy link</button>
+      <button id="copyCode">Copy code</button>
+    </div>
+    <button class="link" data-action="home">Cancel</button>
   </section>
 
   <!-- Joining / connecting -->
   <section id="connecting" class="screen" hidden>
-    <div class="spinner"></div>
+    <div class="disc small breathing" aria-hidden="true"></div>
     <p class="hint" id="connectingText">Looking for the other device…</p>
-    <p class="aside center-text"><button class="link" data-action="home">Cancel</button></p>
+    <button class="link" data-action="home">Cancel</button>
   </section>
 
   <!-- Connected -->
   <section id="room" class="screen" hidden>
-    <label class="drop" id="drop">
-      <input type="file" id="picker" multiple>
-      <strong>Drop files to send</strong>
-      <span>or tap to choose. Pasting works too.</span>
-    </label>
-    <form class="compose" id="textForm">
-      <textarea id="textInput" rows="3" placeholder="Or type or paste text to send" aria-label="Text to send"></textarea>
-      <div class="row end">
-        <span class="kbd-hint">Ctrl/⌘ + Enter</span>
-        <button class="primary" type="submit" id="textSend">Send text</button>
+    <form class="composer" id="textForm">
+      <textarea id="textInput" rows="3" placeholder="Type or paste text" aria-label="Text to send"></textarea>
+      <div class="composer-bar">
+        <label class="attach" id="drop">
+          <input type="file" id="picker" multiple>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+          Files
+        </label>
+        <button class="primary send" type="submit" id="textSend">Send</button>
       </div>
     </form>
-    <p class="secure" id="secure" hidden></p>
     <div class="notice" id="roomEnded" hidden>
       <span id="roomEndedText">Disconnected.</span>
       <button class="primary" data-action="home">Start over</button>
     </div>
-    <label class="toggle"><input type="checkbox" id="autoDl" checked> Save received files automatically</label>
-    <h3>Transfers</h3>
-    <div class="list" id="transfers"><div class="empty" id="empty">Files and text you send or receive appear here.</div></div>
+    <div class="thread" id="transfers"><p class="empty" id="empty">Drop files anywhere on the page.</p></div>
+    <div class="roomfoot">
+      <p class="secure" id="secure" hidden></p>
+      <label class="toggle"><input type="checkbox" id="autoDl" checked><span class="switch" aria-hidden="true"></span>Auto-save files</label>
+    </div>
   </section>
 
   <!-- Ended -->
   <section id="ended" class="screen" hidden>
     <p class="hint" id="endedText">Disconnected.</p>
-    <div class="row center"><button class="primary" data-action="home">Start over</button></div>
+    <button class="primary" data-action="home">Start over</button>
   </section>
 
-  <footer>
-    Peer-to-peer over WebRTC and end-to-end encrypted.<br>
-    Made by <a href="https://almanie.dev">Abdullah Almanie</a>.
-  </footer>
+  <footer>Peer-to-peer and encrypted. Made by <a href="https://almanie.dev">Abdullah Almanie</a>.</footer>
 </main>
+<div class="dropzone" id="dropOverlay" hidden><div class="disc"><span>Drop</span></div></div>
 <script type="module" src="js/app.js"></script>
 </body>
 </html>
